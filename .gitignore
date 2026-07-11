@@ -1,0 +1,16 @@
+# Never commit audio or transcripts — this app is for sensitive interviews.
+*.mp3
+*.wav
+*.m4a
+*.mp4
+*.flac
+*.txt
+!requirements*.txt
+*.browser.txt
+*.transcript.txt
+
+# Test / scratch
+_pwtest.py
+_pwshot.png
+__pycache__/
+.DS_Store
