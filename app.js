@@ -102,7 +102,7 @@ function confirmDiscard() {
 
 $('pick').onclick = () => $('file').click();
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) loadAudio(f, f.name); };
-$('sample').onclick = async e => { e.preventDefault(); loadAudio(await (await fetch('sample.wav')).blob(), 'sample-meeting.wav'); };
+$('sample').onclick = async e => { e.preventDefault(); loadAudio(await (await fetch('sample.m4a')).blob(), 'SOHP E-0055 (first 5 minutes).m4a'); };
 const drop = $('drop');
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
@@ -200,7 +200,7 @@ diarWorker.onmessage = ({ data }) => {
   else if (data.type === 'error') { st('diar', 'Something went wrong: ' + data.text); finishOne(); }
   else if (data.type === 'result') {
     diar = data;
-    segs = toSegments(diar.probs, diar.numFrames, 0.5, 0.2);
+    segs = dropBlips(toSegments(diar.probs, diar.numFrames, 0.5, 0.2));
     st('diar', `Done: found ${new Set(segs.map(s => s.speaker)).size} speaker(s).`, 1);
     showResults(); finishOne();
   }
@@ -281,9 +281,17 @@ function showResults() {
   draw();
 }
 
+// a "speaker" with under a second of speech in the whole recording is a false alarm
+function dropBlips(segments) {
+  const talk = new Map();
+  for (const x of segments) talk.set(x.speaker, (talk.get(x.speaker) || 0) + x.end - x.start);
+  return segments.filter(x => talk.get(x.speaker) >= 1);
+}
+
 function speakerIds() {
   const talk = new Map();
   for (const s of segs) talk.set(s.speaker, (talk.get(s.speaker) || 0) + s.end - s.start);
+  for (const t of turns) if (t.speaker != null && !talk.has(t.speaker)) talk.set(t.speaker, 0);
   return [...talk.keys()].sort((a, b) => a - b).map(id => ({ id, talk: talk.get(id) }));
 }
 

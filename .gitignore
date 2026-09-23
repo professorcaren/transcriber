@@ -21,3 +21,4 @@ models/
 node_modules/
 tools/ref/
 !fonts/*.txt
+!sample.m4a

@@ -31,7 +31,7 @@ The first run downloads the models: about 670 MB with a GPU (Whisper large-v3-tu
 
 Whisper and the diarizer run in parallel in separate Web Workers. `diar.js` is a dependency-free port of the model's log-mel front end, chunking and arrival-order speaker cache from the `transformers` implementation. With the fp32 model it matches the reference output exactly (100% of frame decisions on the test clip); the int8 model shipped by default agrees on 99.994% of frames.
 
-Rough speeds on an Apple M3 Max, for a 30-minute interview: about a minute to identify speakers and about 6 minutes to transcribe with large-v3-turbo on WebGPU.
+How well it works on a real interview: part one of Southern Oral History Program interview E-0055 (65 minutes of 1974 cassette audio, two speakers) took 9 minutes on an Apple M3 Max with the defaults, including first-time model downloads. Compared with the archive's typed transcript, 98.8% of matched words were attributed to the right speaker (99.5% for the narrator, 94.4% for the interviewer, whose short questions are harder). Whisper produced 88% of the typist's words exactly; the typed version is lightly edited, so the true error rate is lower.
 
 ## Files
 
@@ -43,7 +43,7 @@ Rough speeds on an Apple M3 Max, for a 30-minute interview: about a minute to id
 | `worker.js`, `whisper-worker.js` | Diarizer and Whisper workers |
 | `coi-serviceworker.js` | Adds cross-origin isolation on GitHub Pages so WASM can use multiple threads ([coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker), MIT) |
 | `fonts/` | Courier Prime (OFL) and Special Elite (Apache 2.0), self-hosted so the page makes no requests to Google |
-| `sample.wav` | Synthetic 4-voice sample meeting (macOS text-to-speech; `tools/make_sample.py`) |
+| `sample.m4a` | First five minutes of Southern Oral History Program interview [E-0055](https://dc.lib.unc.edu/cdm/compoundobject/collection/sohp/id/4477) (Arthur J. Beaumont, interviewed by Derek Williams, 1974), Wilson Library, UNC-Chapel Hill. Rebuilt by `tools/make_sample.py` |
 | `tools/` | ONNX export and quantization, reference/parity test, local server |
 
 ## Development
@@ -57,14 +57,14 @@ By default the page loads the diarizer from Hugging Face. To test locally built 
 To check `diar.js` against the `transformers` reference:
 
 ```sh
-python tools/make_reference.py sample.wav
+python tools/make_reference.py clip.wav   # any 16 kHz mono wav
 npm i onnxruntime-node && node tools/parity_test.mjs step step_int8
 ```
 
 ## Limitations
 
 - Automatic transcripts contain errors, especially names, numbers and overlapping speech. Check them against the audio before quoting.
-- Similar voices can be merged into one speaker (in the synthetic sample, two of the four text-to-speech voices are), and the model handles at most 8 speakers.
+- Similar voices can be merged into one speaker, and the model handles at most 8 speakers. Synthetic text-to-speech voices are especially hard for it to tell apart.
 - Large files use a lot of memory. Multi-hour recordings on low-memory machines may fail.
 
 ## Privacy

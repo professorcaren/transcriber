@@ -1,29 +1,21 @@
-import subprocess, soundfile as sf, numpy as np, json
-turns = [
- ("Daniel","Good morning everyone, thanks for joining the call. Today we want to go over the budget for the next quarter and figure out where the money is going."),
- ("Samantha","Thanks Daniel. I looked at the numbers last night, and honestly the travel line is the one that worries me the most. It went up nearly forty percent."),
- ("Fred","I can explain part of that. We sent three people to the conference in Denver, and the hotel prices were much higher than we expected."),
- ("Daniel","Okay, that makes sense. Do we expect the same thing next quarter, or was that a one time event?"),
- ("Samantha","Mostly one time. But we do have the regional meetings coming up in the spring, so I would not cut the line too much."),
- ("Fred","Agreed. What if we cap it at the current level and ask people to book earlier?"),
- ("Karen","Sorry I am late. I was stuck in another meeting. Did I miss the discussion about software licenses?"),
- ("Daniel","Not yet Karen, we were just finishing travel. Go ahead and tell us what you found."),
- ("Karen","We are paying for about twenty seats we never use. If we trim those, we save a few thousand dollars a year without anyone noticing."),
- ("Samantha","That is great. Can you send me the list so I can double check with the team leads before we cancel anything?"),
- ("Karen","Sure, I will send it this afternoon."),
- ("Fred","One more thing on hardware. Several laptops are more than five years old and they are getting very slow."),
- ("Daniel","Let us put that on the agenda for next week. I think we are out of time. Thanks everyone."),
-]
-sr=16000; out=[]; truth=[]; t=0.0
-voice_ids={}
-for i,(v,text) in enumerate(turns):
-    fn=f"t{i}.wav"
-    subprocess.run(["say","-v",v,"-o",fn,"--data-format=LEI16@16000",text],check=True)
-    a,_=sf.read(fn,dtype="float32")
-    # trim silence
-    nz=np.nonzero(np.abs(a)>0.01)[0]; a=a[nz[0]:nz[-1]+1]
-    gap=np.zeros(int(sr*0.4),dtype="float32")
-    out+= [a,gap]; truth.append({"speaker":v,"start":round(t,2),"end":round(t+len(a)/sr,2)}); t+= (len(a)+len(gap))/sr
-x=np.concatenate(out); sf.write("meeting.wav",x,sr)
-json.dump(truth,open("truth.json","w"),indent=1)
-print(len(x)/sr,"seconds"); [print(r) for r in truth]
+"""Rebuild sample.m4a: the first five minutes of Southern Oral History Program interview E-0055.
+
+Arthur J. Beaumont, former UNC security chief, interviewed by Derek Williams on November 17, 1974,
+about the 1969 UNC food workers' strikes. Southern Oral History Program Collection (#4007),
+Wilson Library, UNC-Chapel Hill: https://dc.lib.unc.edu/cdm/compoundobject/collection/sohp/id/4477
+("No restrictions. Open to research.")
+
+    python tools/make_sample.py      # macOS (uses afconvert for AAC); needs librosa and soundfile
+"""
+import os, subprocess, tempfile, urllib.request
+import librosa, soundfile as sf
+
+AUDIO_01 = "https://dc.lib.unc.edu/utils/getstream/collection/sohp/id/4473"
+
+with tempfile.TemporaryDirectory() as tmp:
+    mp3, wav = os.path.join(tmp, "audio01.mp3"), os.path.join(tmp, "clip.wav")
+    urllib.request.urlretrieve(AUDIO_01, mp3)
+    audio, sr = librosa.load(mp3, sr=16000, mono=True, duration=300)
+    sf.write(wav, audio, sr, subtype="PCM_16")
+    subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "48000", wav, "sample.m4a"], check=True)
+print("wrote sample.m4a")
