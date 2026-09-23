@@ -6,14 +6,8 @@ const COLORS = [...Array(8)].map((_, i) => getComputedStyle(document.documentEle
 
 // Whisper presets, using the prebuilt dtype variants in the onnx-community repos.
 // `_timestamped` exports carry the cross-attentions needed for word timings.
-// On GPU: fp16 base matches fp32 on 99% of words; small and turbo use q4f16 decoders.
 const QUALITY = {
   fast: {
-    label: 'Whisper base', id: 'onnx-community/whisper-base_timestamped',
-    webgpu: { dtype: { encoder_model: 'fp16', decoder_model_merged: 'fp16' }, mb: 146 },
-    wasm: { dtype: 'q8', mb: 77 },
-  },
-  better: {
     label: 'Whisper small', id: 'onnx-community/whisper-small_timestamped',
     webgpu: { dtype: { encoder_model: 'fp16', decoder_model_merged: 'q4f16' }, mb: 322 },
     wasm: { dtype: 'q8', mb: 249 },
@@ -46,7 +40,9 @@ const asrWorker = new Worker('./whisper-worker.js', { type: 'module' });
     gpu = !!adapter && adapter.features.has('shader-f16');
   } catch { gpu = false; }
   $('device').value = 'auto';
+  if (!gpu) document.querySelector('input[name=quality][value=fast]').checked = true;
   updateOptions();
+  setExports('idle');
 })();
 
 function asrDevice() {
@@ -91,6 +87,7 @@ async function loadAudio(blob, name) {
   $('file-info').innerHTML = `<b>${esc(name)}</b> · ${X.hms(file.duration)} long`;
   diar = words = null; turns = []; dirty = false;
   $('results').hidden = true;
+  setExports('idle');
   $('progress').hidden = true;
   updateOptions();
 }
@@ -122,12 +119,13 @@ $('rec').onclick = async () => {
   recorder.ondataavailable = e => chunks.push(e.data);
   recorder.onstop = () => {
     stream.getTracks().forEach(t => t.stop());
-    clearInterval(recTimer); recorder = null; $('rec').textContent = 'Record';
+    clearInterval(recTimer); recorder = null; $('rec-label').textContent = 'Record'; document.body.classList.remove('recording');
     const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '-');
     loadAudio(new Blob(chunks, { type: chunks[0]?.type }), `recording ${stamp}.webm`);
   };
   recorder.start(); recStart = Date.now();
-  recTimer = setInterval(() => { $('rec').textContent = `Stop (${X.hms((Date.now() - recStart) / 1000)})`; }, 500);
+  document.body.classList.add('recording');
+  recTimer = setInterval(() => { $('rec-label').textContent = `Stop (${X.hms((Date.now() - recStart) / 1000)})`; }, 500);
 };
 
 // ---------- run ----------
@@ -137,8 +135,10 @@ $('go').onclick = () => {
   const dev = asrDevice();
   job = { doAsr, doDiar, q, dev, pending: 0, t0: performance.now() };
   diar = words = null; turns = []; segs = []; dirty = false;
-  $('transcript').innerHTML = ''; $('results').hidden = true; $('exports').hidden = true;
-  $('progress').hidden = false;
+  $('transcript').innerHTML = ''; $('results').hidden = true;
+  $('progress').hidden = false; $('done-note').textContent = ''; $('counter').innerHTML = '';
+  document.body.classList.add('running');
+  setExports('busy');
   $('row-diar').hidden = !doDiar; $('row-asr').hidden = !doAsr;
   updateOptions();
   if (doDiar) {
@@ -155,6 +155,26 @@ $('go').onclick = () => {
   }
 };
 
+// Download panel: always visible; greyed out until there is something to export.
+function setExports(state) {
+  const hasText = !!(words && words.length);
+  document.querySelectorAll('#exports button[data-f]').forEach(b => {
+    const f = b.dataset.f;
+    b.disabled = state !== 'ready' || (f === 'rttm' && !diar) || (['srt', 'vtt'].includes(f) && !hasText);
+  });
+  $('export-note').classList.toggle('busy', state === 'busy');
+  $('export-text').textContent = {
+    idle: "Your transcript will be ready to download here once it's finished.",
+    busy: 'Transcribing now. The downloads unlock as soon as it finishes.',
+    ready: 'Ready. Downloads include your corrections and speaker names.',
+  }[state];
+}
+
+// mechanical tape counter showing how far through the recording the typing has got
+function setCounter(seconds) {
+  $('counter').innerHTML = X.hms(seconds).split('').map(c => c === ':' ? '<span class="sep">:</span>' : `<span>${c}</span>`).join('');
+}
+
 function st(which, text, p) {
   $('st-' + which).textContent = text;
   $('pr-' + which).style.width = p == null ? '0' : (100 * p).toFixed(1) + '%';
@@ -168,12 +188,8 @@ function finishOne() {
   job.finished = true;
   lastModelLabel = job.doAsr ? job.q.label : null;
   renderTranscript();
-  const hasText = !!(words && words.length);
-  document.querySelectorAll('#exports button[data-f]').forEach(b => {
-    const f = b.dataset.f;
-    b.disabled = (f === 'rttm' && !diar) || (['srt', 'vtt'].includes(f) && !hasText);
-  });
-  $('exports').hidden = false;
+  document.body.classList.remove('running');
+  setExports(words?.length || diar ? 'ready' : 'idle');
   job = null; dirty = true;
   updateOptions();
 }
@@ -202,10 +218,11 @@ asrWorker.onmessage = ({ data }) => {
     const el = (performance.now() - (job.asrT0 ?? job.t0)) / 1000;
     const eta = data.progress > 0.02 ? el / data.progress - el : null;
     st('asr', `Transcribing… ${Math.round(100 * data.progress)}%` + (eta ? `, about ${eta < 90 ? Math.round(eta) + ' s' : Math.round(eta / 60) + ' min'} left` : ''), data.progress);
+    setCounter(data.progress * file.duration);
     showResults();
   } else if (data.type === 'result') {
     words = data.words;
-    st('asr', `Done: ${words.length.toLocaleString()} words.`, 1);
+    st('asr', `Done: ${words.length.toLocaleString()} words.`, 1); setCounter(file.duration);
     showResults(); finishOne();
   }
 };
@@ -213,13 +230,13 @@ asrWorker.onmessage = ({ data }) => {
 // ---------- transcript model ----------
 const endsSentence = w => /[.?!]["')\]]?$/.test(w.text.trim());
 
-// split a run of words into paragraphs at sentence ends after a pause or ~120 words
+// split a run of words into paragraphs at a sentence end after a pause (once there are ~30 words) or after ~120 words
 function paragraphs(ws) {
   const paras = []; let cur = [];
   ws.forEach((w, i) => {
     cur.push(w);
     const next = ws[i + 1];
-    if (next && endsSentence(w) && (next.start - w.end > 1.5 || cur.length >= 120)) { paras.push(cur); cur = []; }
+    if (next && endsSentence(w) && ((next.start - w.end > 1.5 && cur.length >= 30) || cur.length >= 120)) { paras.push(cur); cur = []; }
   });
   if (cur.length) paras.push(cur);
   return paras;
@@ -274,7 +291,7 @@ function renderSpeakers() {
   $('speakers').innerHTML = speakerIds().map(({ id, talk }) =>
     `<label class="spk"><span class="sw" style="background:${COLORS[id]}"></span>` +
     `<input data-s="${id}" value="${esc(names[id])}" aria-label="Name for speaker ${id + 1}">` +
-    `<span class="muted">${X.hms(talk).replace(/^00:/, '')} talking</span></label>`).join('');
+    `<span class="faded">${X.hms(talk).replace(/^00:/, '')} talking</span></label>`).join('');
 }
 $('speakers').oninput = e => {
   const s = e.target.dataset.s; if (s == null) return;
@@ -285,9 +302,10 @@ $('speakers').oninput = e => {
 
 function renderTranscript() {
   const final = !job || job.finished;
+  $('transcript').classList.toggle('typing', !final && !!job?.doAsr);
   const ids = speakerIds().map(x => x.id);
   if (!turns.length) {
-    $('transcript').innerHTML = `<p class="muted">${job ? 'The transcript will appear here as it is written…' : ''}</p>`;
+    $('transcript').innerHTML = `<p class="empty">${job ? 'The transcript will be typed out here as it goes…' : ''}</p>`;
     return;
   }
   $('transcript').innerHTML = turns.map((t, i) => {
@@ -297,7 +315,7 @@ function renderTranscript() {
       : '';
     const body = t.text
       ? `<div class="txt" data-i="${i}" ${final ? 'contenteditable="plaintext-only" spellcheck="true"' : ''}>${esc(t.text)}</div>`
-      : `<div class="txt muted">${job?.doAsr ? '…' : `until ${X.hms(t.end)}`}</div>`;
+      : `<div class="txt faded">${job?.doAsr ? '…' : `until ${X.hms(t.end)}`}</div>`;
     return `<div class="turn" data-i="${i}"><button class="ts" data-t="${t.start}" title="Play from here">${X.hms(t.start)}</button><div>${who}${body}</div></div>`;
   }).join('');
   if (!final) $('transcript').lastElementChild?.scrollIntoView({ block: 'nearest' });
@@ -350,12 +368,12 @@ function draw() {
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
   const css = getComputedStyle(document.documentElement);
   const dur = file.duration;
-  g.font = '11px system-ui'; g.fillStyle = css.getPropertyValue('--muted');
+  g.font = "12px 'Courier Prime', monospace"; g.fillStyle = css.getPropertyValue('--faded');
   const tick = [5, 15, 60, 300, 600].find(t => dur / t <= 12) || 1200;
   for (let t = 0; t < dur; t += tick) g.fillText(X.hms(t).replace(/^00:/, ''), t / dur * W + 2, 11);
   ids.forEach((s, lane) => {
     const y = TOP + lane * LANE;
-    g.fillStyle = css.getPropertyValue('--line'); g.fillRect(0, y, W, LANE - 6);
+    g.fillStyle = css.getPropertyValue('--rule'); g.fillRect(0, y, W, LANE - 6);
     g.fillStyle = COLORS[s];
     for (const seg of segs) if (seg.speaker === s) g.fillRect(seg.start / dur * W, y, Math.max(1, (seg.end - seg.start) / dur * W), LANE - 6);
   });

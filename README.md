@@ -19,19 +19,19 @@ Built for graduate students and researchers working with sensitive recordings (o
 | Playing alongside audio or video | Subtitles (`.srt`), WebVTT captions with speaker tags (`.vtt`) |
 | Analysis | Spreadsheet (`.csv`, one row per turn), JSON (turns plus every word with its timing and speaker), RTTM (standard diarization format) |
 
-The first run downloads the models: with the defaults, about 250 MB on a GPU or 180 MB on a CPU. Your browser keeps them, so later runs start right away.
+The first run downloads the models: about 670 MB with a GPU (Whisper large-v3-turbo) or 350 MB on a CPU (Whisper small). Your browser keeps them, so later runs start right away.
 
 ## How it works
 
 | Step | Model | Runs on |
 |---|---|---|
-| Words | OpenAI Whisper (base, small or large-v3-turbo; `onnx-community/*_timestamped`) with word timestamps | [transformers.js](https://github.com/huggingface/transformers.js), WebGPU or WASM |
+| Words | OpenAI Whisper, large-v3-turbo ("Most accurate", GPU only) or small ("Fast"), from the prebuilt `onnx-community/*_timestamped` exports, with word timestamps | [transformers.js](https://github.com/huggingface/transformers.js), WebGPU or WASM |
 | Speakers | [NVIDIA Nemotron 3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization) (Sortformer, up to 8 speakers, 10 ms resolution), converted to ONNX: [NealCaren/Nemotron-3-Diarization-ONNX](https://huggingface.co/NealCaren/Nemotron-3-Diarization-ONNX) | [ONNX Runtime Web](https://onnxruntime.ai), int8 on WASM |
 | Alignment | Each Whisper word goes to the speaker with the most probability mass over the word's span. A speaker change within 3 words of a sentence end is moved to the punctuation. | plain JS |
 
 Whisper and the diarizer run in parallel in separate Web Workers. `diar.js` is a dependency-free port of the model's log-mel front end, chunking and arrival-order speaker cache from the `transformers` implementation. With the fp32 model it matches the reference output exactly (100% of frame decisions on the test clip); the int8 model shipped by default agrees on 99.994% of frames.
 
-Rough speeds on an Apple M3 Max, for a 30-minute interview: about a minute to identify speakers, and about 3 minutes to transcribe with Whisper base on WebGPU (about 6 minutes with large-v3-turbo).
+Rough speeds on an Apple M3 Max, for a 30-minute interview: about a minute to identify speakers and about 6 minutes to transcribe with large-v3-turbo on WebGPU.
 
 ## Files
 
@@ -42,6 +42,7 @@ Rough speeds on an Apple M3 Max, for a 30-minute interview: about a minute to id
 | `export.js` | Export formats, including a small `.docx` writer |
 | `worker.js`, `whisper-worker.js` | Diarizer and Whisper workers |
 | `coi-serviceworker.js` | Adds cross-origin isolation on GitHub Pages so WASM can use multiple threads ([coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker), MIT) |
+| `fonts/` | Courier Prime (OFL) and Special Elite (Apache 2.0), self-hosted so the page makes no requests to Google |
 | `sample.wav` | Synthetic 4-voice sample meeting (macOS text-to-speech; `tools/make_sample.py`) |
 | `tools/` | ONNX export and quantization, reference/parity test, local server |
 
