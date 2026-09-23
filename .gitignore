@@ -14,3 +14,9 @@ _pwtest.py
 _pwshot.png
 __pycache__/
 .DS_Store
+!sample.wav
+
+# local copies of the ONNX models (served from Hugging Face; use ?models=local to test)
+models/
+node_modules/
+tools/ref/
