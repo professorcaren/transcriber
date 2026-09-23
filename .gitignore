@@ -20,3 +20,4 @@ __pycache__/
 models/
 node_modules/
 tools/ref/
+!fonts/*.txt
