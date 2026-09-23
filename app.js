@@ -30,8 +30,25 @@ let diar = null, words = null, segs = [], turns = [];
 let job = null, dirty = false, lastModelLabel = null;
 const names = [...Array(8)].map((_, i) => `Speaker ${i + 1}`);
 
-const diarWorker = new Worker('./worker.js', { type: 'module' });
-const asrWorker = new Worker('./whisper-worker.js', { type: 'module' });
+// The diarizer worker is thrown away after each run: WebAssembly memory never shrinks, so
+// ending the worker is the only way to hand its ~250 MB back before Whisper needs it.
+let diarWorker = newDiarWorker();
+function newDiarWorker() {
+  const w = new Worker('./worker.js', { type: 'module' });
+  w.onmessage = onDiarMessage;
+  return w;
+}
+// Whisper's worker is also replaced after every run, so its ~800 MB (CPU) isn't held while idle
+// or while the next run's diarizer works. The model files stay in the browser cache.
+let asrWorker = newAsrWorker();
+function newAsrWorker() {
+  const w = new Worker('./whisper-worker.js', { type: 'module' });
+  w.onmessage = onAsrMessage;
+  return w;
+}
+
+// Safari reloads pages it thinks use too much memory, so run one model at a time there by default.
+const isSafari = /Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Edg\//.test(navigator.userAgent);
 
 // ---------- setup ----------
 (async () => {
@@ -61,10 +78,12 @@ function updateOptions() {
   }
   if (document.querySelector('input[name=quality]:checked').disabled) document.querySelector('input[name=quality][value=fast]').checked = true;
   $('device-note').textContent = dev === 'webgpu' ? 'Using your graphics card (WebGPU).' : 'Using your processor (no WebGPU available, or CPU selected).';
+  if (!$('one-at-a-time').dataset.touched) $('one-at-a-time').checked = isSafari || dev === 'wasm';
   $('quality-box').classList.toggle('off', !$('opt-asr').checked);
   $('go').disabled = !audio16 || (!$('opt-asr').checked && !$('opt-diar').checked) || !!job;
 }
 ['device', 'opt-asr', 'opt-diar'].forEach(id => $(id).addEventListener('change', updateOptions));
+$('one-at-a-time').addEventListener('change', e => { e.target.dataset.touched = '1'; });
 document.querySelectorAll('input[name=quality]').forEach(el => el.addEventListener('change', updateOptions));
 
 // ---------- audio input ----------
@@ -72,10 +91,16 @@ async function loadAudio(blob, name) {
   if (dirty && !confirmDiscard()) return;
   $('file-info').textContent = `Reading ${name}…`;
   try {
-    const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
-    const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
-    const src = off.createBufferSource(); src.buffer = decoded; src.connect(off.destination); src.start();
-    audio16 = (await off.startRendering()).getChannelData(0);
+    // decode straight to 16 kHz: a 48 kHz stereo decode of an hour-long file is ~1.4 GB
+    const ctx = new AudioContext({ sampleRate: 16000 });
+    let decoded;
+    try { decoded = await ctx.decodeAudioData(await blob.arrayBuffer()); } finally { ctx.close(); }
+    audio16 = decoded.getChannelData(0);
+    if (decoded.numberOfChannels > 1) {
+      const mono = new Float32Array(decoded.length), n = decoded.numberOfChannels;
+      for (let c = 0; c < n; c++) { const ch = decoded.getChannelData(c); for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / n; }
+      audio16 = mono;
+    }
     if (file?.url) URL.revokeObjectURL(file.url);
     file = { name, duration: decoded.duration, url: URL.createObjectURL(blob) };
   } catch (e) {
@@ -149,11 +174,30 @@ $('go').onclick = () => {
   }
   if (doAsr) {
     job.pending++;
-    const b = audio16.slice();
-    asrWorker.postMessage({ audio: b, model: q.id, device: dev, dtype: q[dev].dtype, language: $('lang').value }, [b.buffer]);
-    st('asr', 'Starting…', 0);
+    // One step at a time: the diarizer finishes and its worker is discarded before Whisper
+    // loads (in Chrome on the CPU path this took the peak from about 1.1 GB to 0.8 GB).
+    if (doDiar && $('one-at-a-time').checked) { job.asrWaiting = true; st('asr', 'Waiting for the speakers to finish, to save memory…', 0); }
+    else startAsr();
   }
 };
+
+function startAsr() {
+  job.asrWaiting = false;
+  const b = audio16.slice();
+  asrWorker.postMessage({ audio: b, model: job.q.id, device: job.dev, dtype: job.q[job.dev].dtype, language: $('lang').value }, [b.buffer]);
+  st('asr', 'Starting…', 0);
+}
+
+function recycleAsrWorker() {
+  asrWorker.terminate();
+  asrWorker = newAsrWorker();
+}
+
+function recycleDiarWorker() {
+  diarWorker.terminate();
+  diarWorker = newDiarWorker();
+  if (job?.asrWaiting) startAsr();
+}
 
 // Download panel: always visible; greyed out until there is something to export.
 function setExports(state) {
@@ -194,11 +238,12 @@ function finishOne() {
   updateOptions();
 }
 
-diarWorker.onmessage = ({ data }) => {
+function onDiarMessage({ data }) {
   if (data.type === 'status') st('diar', data.text.replace('Diarizing…', 'Finding speakers…'), data.progress);
   else if (data.type === 'loaded') st('diar', 'Finding speakers…', 0);
-  else if (data.type === 'error') { st('diar', 'Something went wrong: ' + data.text); finishOne(); }
+  else if (data.type === 'error') { st('diar', 'Something went wrong: ' + data.text); recycleDiarWorker(); finishOne(); }
   else if (data.type === 'result') {
+    recycleDiarWorker();
     diar = data;
     segs = dropBlips(toSegments(diar.probs, diar.numFrames, 0.5, 0.2));
     st('diar', `Done: found ${new Set(segs.map(s => s.speaker)).size} speaker(s).`, 1);
@@ -206,12 +251,12 @@ diarWorker.onmessage = ({ data }) => {
   }
 };
 
-asrWorker.onmessage = ({ data }) => {
+function onAsrMessage({ data }) {
   if (data.type === 'status') {
     if (data.text.startsWith('Transcribing')) job.asrT0 = performance.now();
     st('asr', data.text.replace('Downloading Whisper', 'Downloading the speech model (first time only)'), data.progress);
   }
-  else if (data.type === 'error') { st('asr', 'Something went wrong: ' + data.text); finishOne(); }
+  else if (data.type === 'error') { st('asr', 'Something went wrong: ' + data.text); recycleAsrWorker(); finishOne(); }
   else if (data.type === 'partial') {
     words = data.words;
     // estimate from transcription time only (not the model download)
@@ -222,6 +267,7 @@ asrWorker.onmessage = ({ data }) => {
     showResults();
   } else if (data.type === 'result') {
     words = data.words;
+    recycleAsrWorker();
     st('asr', `Done: ${words.length.toLocaleString()} words.`, 1); setCounter(file.duration);
     showResults(); finishOne();
   }

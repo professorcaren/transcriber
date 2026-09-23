@@ -20,16 +20,18 @@ async function fetchBytes(url, label, report) {
   if (!net.ok) throw new Error(`Could not download ${label} (HTTP ${net.status})`);
   const total = +net.headers.get('content-length') || 0;
   const reader = net.body.getReader();
-  const parts = []; let got = 0;
+  // write straight into one buffer when the size is known, to avoid holding extra copies
+  let buf = new Uint8Array(total || 1 << 20), got = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    parts.push(value); got += value.length;
+    if (got + value.length > buf.length) { const bigger = new Uint8Array(Math.max(buf.length * 2, got + value.length)); bigger.set(buf.subarray(0, got)); buf = bigger; }
+    buf.set(value, got); got += value.length;
     report?.(got, total);
   }
-  const blob = new Blob(parts);
-  try { await cache?.put(url, new Response(blob)); } catch { /* over quota: skip caching */ }
-  return new Uint8Array(await blob.arrayBuffer());
+  buf = got === buf.length ? buf : buf.slice(0, got);
+  try { await cache?.put(url, new Response(buf)); } catch { /* over quota: skip caching */ }
+  return buf;
 }
 
 async function load(base, model, backend) {

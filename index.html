@@ -232,6 +232,7 @@
         <div class="inline" style="margin:0"><label for="device">Run speech recognition on</label>
           <select id="device"><option value="auto">Automatic</option><option value="webgpu">Graphics card (WebGPU)</option><option value="wasm">Processor (CPU)</option></select></div>
         <div id="device-note" class="small faded"></div>
+        <label class="inline" style="margin:4px 0 0"><input type="checkbox" id="one-at-a-time"> One step at a time: find the speakers first, then transcribe. Slower, but uses much less memory. Try this if the page reloads or crashes.</label>
       </div>
     </details>
   </section>
