@@ -4,21 +4,23 @@ import * as X from './export.js';
 const $ = id => document.getElementById(id);
 const COLORS = [...Array(8)].map((_, i) => getComputedStyle(document.documentElement).getPropertyValue('--s' + i).trim());
 
-// Whisper presets. `_timestamped` exports carry the cross-attentions needed for word timings.
+// Whisper presets, using the prebuilt dtype variants in the onnx-community repos.
+// `_timestamped` exports carry the cross-attentions needed for word timings.
+// On GPU: fp16 base matches fp32 on 99% of words; small and turbo use q4f16 decoders.
 const QUALITY = {
   fast: {
     label: 'Whisper base', id: 'onnx-community/whisper-base_timestamped',
-    webgpu: { dtype: { encoder_model: 'fp32', decoder_model_merged: 'fp32' }, mb: 290 },
-    wasm: { dtype: 'q8', mb: 76 },
+    webgpu: { dtype: { encoder_model: 'fp16', decoder_model_merged: 'fp16' }, mb: 146 },
+    wasm: { dtype: 'q8', mb: 77 },
   },
   better: {
     label: 'Whisper small', id: 'onnx-community/whisper-small_timestamped',
-    webgpu: { dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' }, mb: 585 },
-    wasm: { dtype: 'q8', mb: 250 },
+    webgpu: { dtype: { encoder_model: 'fp16', decoder_model_merged: 'q4f16' }, mb: 322 },
+    wasm: { dtype: 'q8', mb: 249 },
   },
   best: {
     label: 'Whisper large-v3-turbo', id: 'onnx-community/whisper-large-v3-turbo_timestamped',
-    webgpu: { dtype: { encoder_model: 'q4f16', decoder_model_merged: 'q4f16' }, mb: 565 },
+    webgpu: { dtype: { encoder_model: 'q4f16', decoder_model_merged: 'q4f16' }, mb: 564 },
     wasm: null, // far too slow on CPU
   },
 };

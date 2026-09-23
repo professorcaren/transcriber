@@ -19,7 +19,7 @@ Built for graduate students and researchers working with sensitive recordings (o
 | Playing alongside audio or video | Subtitles (`.srt`), WebVTT captions with speaker tags (`.vtt`) |
 | Analysis | Spreadsheet (`.csv`, one row per turn), JSON (turns plus every word with its timing and speaker), RTTM (standard diarization format) |
 
-The first run downloads the models (about 180 MB with the defaults on a CPU, or about 390 MB when using the GPU). Your browser keeps them, so later runs start right away.
+The first run downloads the models: with the defaults, about 250 MB on a GPU or 180 MB on a CPU. Your browser keeps them, so later runs start right away.
 
 ## How it works
 
