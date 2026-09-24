@@ -2,7 +2,8 @@
 // The page sends one 30-second window at a time, so this worker never holds the whole recording.
 //   {type: 'load', model, device, dtype}          -> {type: 'loaded'}
 //   {type: 'window', audio, offset, language}     -> {type: 'window', words: [{text, start, end}]}  (seconds, absolute)
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0';
+// patched copy of transformers.js 4.3.0: see the note at the top of that file
+import { pipeline, env } from './vendor/transformers-4.3.0-leakfix.js';
 
 env.allowLocalModels = false;
 let asr = null, loadedKey = null;
