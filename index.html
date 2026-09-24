@@ -151,6 +151,9 @@
   .turn.now .ts { color: var(--red); }
   .ts { font: 13px var(--type); color: var(--faded); border: 0; background: none; box-shadow: none; padding: 2px 12px 0 18px; margin: 0; text-align: left; align-self: start; font-weight: 400; }
   .ts:hover { color: var(--red); }
+  .ts { position: relative; }
+  .playing .turn.now .ts::before { content: '❚❚'; position: absolute; left: 3px; top: 4px; font-size: 9px; letter-spacing: -1px; }
+  ::highlight(word) { background-color: var(--red-soft); text-decoration: underline 2px var(--red); text-underline-offset: 3px; }
   .turn > div { padding-left: 16px; min-width: 0; }
   select.who { font: 700 14px var(--type); text-transform: uppercase; letter-spacing: .06em; border: 0; padding: 0 4px 0 0; background: transparent; cursor: pointer; }
   select.who:disabled { opacity: 1; cursor: default; appearance: none; }
@@ -302,7 +305,7 @@
     <section class="sheet" id="transcript-sheet">
       <div class="head"><h2>Transcript</h2>
         <label class="small"><input type="checkbox" id="follow" checked> Scroll along with playback</label></div>
-      <div class="tip">Automatic transcripts contain mistakes. Click a timestamp to hear that passage, click the text to correct it, and use the speaker menu to relabel a turn. <kbd>Esc</kbd> plays or pauses at any time.</div>
+      <div class="tip">Automatic transcripts contain mistakes. Click a timestamp to hear that passage (click it again to pause), click the text to correct it, and use the speaker menu to relabel a turn. <kbd>Esc</kbd> plays or pauses at any time.</div>
       <div id="transcript"></div>
     </section>
   </div>

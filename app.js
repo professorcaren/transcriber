@@ -450,7 +450,10 @@ $('transcript').addEventListener('input', e => {
 });
 $('transcript').addEventListener('click', e => {
   const ts = e.target.closest('.ts'); if (!ts) return;
-  $('player').currentTime = +ts.dataset.t; $('player').play();
+  const p = $('player');
+  // the playing turn's timestamp pauses; any other one plays from there
+  if (!p.paused && +ts.closest('.turn').dataset.i === nowIdx) return p.pause();
+  p.currentTime = +ts.dataset.t; p.play();
 });
 
 // Esc toggles playback, even while editing
@@ -472,6 +475,52 @@ function highlight() {
   el.classList.add('now');
   const editing = document.activeElement?.classList.contains('txt');
   if ($('follow').checked && !$('player').paused && !editing) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+// each word's character range in the turn's text, laid out the same way buildTurns joins it;
+// null once the text no longer matches (edited by hand)
+function wordRanges(t) {
+  if (t.marks?.text === t.text) return t.marks.ranges;
+  let text = '', ranges = [];
+  paragraphs(t.words || []).forEach((p, k) => {
+    if (k) text += '\n\n';
+    const raw = p.map(w => w.text).join(''), para = raw.trim(), base = text.length;
+    let at = base - (raw.length - raw.trimStart().length);
+    for (const w of p) {
+      const a = at + w.text.length - w.text.trimStart().length, b = at + w.text.trimEnd().length;
+      ranges.push([Math.max(a, base), Math.min(b, base + para.length)]);
+      at += w.text.length;
+    }
+    text += para;
+  });
+  t.marks = { text: t.text, ranges: text === t.text && ranges.length ? ranges : null };
+  return t.marks.ranges;
+}
+
+// underline the word being spoken (CSS Custom Highlight API; skipped where unsupported)
+let wordNode = null, wordIdx = -1;
+function highlightWord() {
+  if (!window.CSS?.highlights || !window.Highlight) return;
+  const t = turns[nowIdx], now = $('player').currentTime;
+  const ranges = t && !t.edited ? wordRanges(t) : null;
+  const node = ranges && document.querySelector(`.txt[data-i="${nowIdx}"]`)?.firstChild;
+  let i = -1;
+  if (node?.nodeType === Node.TEXT_NODE && node.length === t.text.length) {
+    let lo = 0, hi = t.words.length - 1;   // last word starting at or before now
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (t.words[m].start <= now) { i = m; lo = m + 1; } else hi = m - 1; }
+  }
+  if (node === wordNode && i === wordIdx) return;
+  wordNode = node; wordIdx = i;
+  const [a, b] = i >= 0 ? ranges[i] : [0, 0];
+  if (b <= a) return CSS.highlights.delete('word');
+  const r = new Range(); r.setStart(node, a); r.setEnd(node, b);
+  CSS.highlights.set('word', new Highlight(r));
+}
+
+// timeupdate fires only a few times a second, too coarse for words, so follow frames while playing
+function followPlayback() {
+  highlight(); highlightWord();
+  if (!$('player').paused) requestAnimationFrame(followPlayback);
 }
 
 const LANE = 22, TOP = 18;
@@ -501,7 +550,9 @@ $('timeline').onclick = e => {
   const r = e.target.getBoundingClientRect();
   $('player').currentTime = (e.clientX - r.left) / r.width * file.duration;
 };
-$('player').ontimeupdate = () => { draw(); highlight(); };
+$('player').ontimeupdate = () => { draw(); highlight(); highlightWord(); };
+$('player').onplay = () => { $('transcript').classList.add('playing'); requestAnimationFrame(followPlayback); };
+$('player').onpause = () => $('transcript').classList.remove('playing');
 addEventListener('resize', draw);
 
 // ---------- export ----------
