@@ -2,7 +2,7 @@
 
 Transcribe research interviews and label who is speaking, **entirely in your browser**. There's no server, no upload and no sign-in, and the audio never leaves your computer.
 
-**Use it:** https://nealcaren.github.io/local-interview-transcriber/ (works best in Chrome or Edge on a laptop or desktop)
+**Use it:** https://professorcaren.org/transcriber/ (works best in Chrome or Edge on a laptop or desktop)
 
 Built for graduate students and researchers working with sensitive recordings (oral histories, qualitative interviews, focus groups). Instead of a Python setup or a cloud service, you open a web page.
 
