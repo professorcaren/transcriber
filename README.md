@@ -43,7 +43,7 @@ How well it works on a real interview: part one of Southern Oral History Program
 | `worker.js`, `whisper-worker.js` | Diarizer and Whisper workers |
 | `coi-serviceworker.js` | Adds cross-origin isolation on GitHub Pages so WASM can use multiple threads ([coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker), MIT) |
 | `fonts/` | Courier Prime (OFL) and Special Elite (Apache 2.0), self-hosted so the page makes no requests to Google |
-| `sample.m4a` | First five minutes of Southern Oral History Program interview [E-0055](https://dc.lib.unc.edu/cdm/compoundobject/collection/sohp/id/4477) (Arthur J. Beaumont, interviewed by Derek Williams, 1974), Wilson Library, UNC-Chapel Hill. Rebuilt by `tools/make_sample.py` |
+| `sample.m4a` | 26:58–30:53 of Southern Oral History Program interview [K-0838](https://docsouth.unc.edu/sohp/K-0838/menu.html) (Quinton E. Baker, interviewed by Chris McGinnis, 2002), Wilson Library, UNC-Chapel Hill. Rebuilt by `tools/make_sample.py` |
 | `tools/` | ONNX export and quantization, reference/parity test, local server |
 
 ## Development

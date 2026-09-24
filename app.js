@@ -141,7 +141,7 @@ function confirmDiscard() {
 
 $('pick').onclick = () => $('file').click();
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) loadAudio(f, f.name); };
-$('sample').onclick = async e => { e.preventDefault(); loadAudio(await (await fetch('sample.m4a')).blob(), 'SOHP E-0055 (first 5 minutes).m4a'); };
+$('sample').onclick = async e => { e.preventDefault(); loadAudio(await (await fetch('sample.m4a')).blob(), 'SOHP K-0838 (26:58–30:53).m4a'); };
 const drop = $('drop');
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
