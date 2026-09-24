@@ -121,6 +121,7 @@ async function loadAudio(blob, name) {
     (file.duration > 90 * 60 ? '<br>Long recording: if the page reloads partway through, tick “One step at a time” under Advanced settings, or split the file into one-hour parts.' : '');
   diar = words = null; turns = []; dirty = false;
   $('results').hidden = true;
+  $('long-tips').hidden = file.duration <= 30 * 60;
   setExports('idle');
   $('progress').hidden = true;
   updateOptions();
