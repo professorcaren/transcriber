@@ -41,21 +41,17 @@ function makeFFT(n) {
   };
 }
 
-// audio: Float32Array at 16 kHz mono. melFilters: Float32Array [nMels * (nFft/2+1)].
-// Returns { data: Float32Array [numFrames * nMels], numFrames } (valid frames only).
-export function logMel(audio, melFilters) {
+// Log-mel features for STFT frames [f0, f1), computed straight from the audio: pre-emphasis and
+// the centered STFT's zero padding are applied on the fly, so long files need no whole-file arrays.
+// makeMelExtractor(melFilters) -> (audio, f0, f1) => Float32Array [(f1 - f0) * nMels]
+export function makeMelExtractor(melFilters) {
   const { nFft, win, hop, nMels, preemph } = CFG;
-  const L = audio.length, nBins = nFft / 2 + 1, pad = nFft / 2;
-  const x = new Float32Array(L + 2 * pad);
-  x[pad] = audio[0];
-  for (let i = 1; i < L; i++) x[pad + i] = audio[i] - preemph * audio[i - 1];
+  const nBins = nFft / 2 + 1, pad = nFft / 2;
   // symmetric hann(400), zero-padded to 512 and centered, as torch.stft does
   const window = new Float64Array(nFft), off = (nFft - win) / 2;
   for (let i = 0; i < win; i++) window[off + i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (win - 1));
-  const numFrames = Math.floor(L / hop);
   const fft = makeFFT(nFft);
   const re = new Float64Array(nFft), im = new Float64Array(nFft), pow = new Float64Array(nBins);
-  const out = new Float32Array(numFrames * nMels);
   const guard = 2 ** -24;
   // mel filters are sparse: remember each band's nonzero bin range
   const lo = new Int32Array(nMels), hi = new Int32Array(nMels);
@@ -63,18 +59,31 @@ export function logMel(audio, melFilters) {
     lo[m] = nBins; hi[m] = 0;
     for (let k = 0; k < nBins; k++) if (melFilters[m * nBins + k] !== 0) { lo[m] = Math.min(lo[m], k); hi[m] = k + 1; }
   }
-  for (let f = 0; f < numFrames; f++) {
-    const s = f * hop;
-    for (let i = 0; i < nFft; i++) { re[i] = x[s + i] * window[i]; im[i] = 0; }
-    fft(re, im);
-    for (let k = 0; k < nBins; k++) pow[k] = re[k] * re[k] + im[k] * im[k];
-    for (let m = 0; m < nMels; m++) {
-      let acc = 0; const row = m * nBins;
-      for (let k = lo[m]; k < hi[m]; k++) acc += melFilters[row + k] * pow[k];
-      out[f * nMels + m] = Math.log(acc + guard);
+  return (audio, f0, f1) => {
+    const L = audio.length;
+    // pre-emphasized sample j (rounded to float32, as the reference stores it), 0 outside the audio
+    const x = j => (j <= 0 ? (j === 0 ? audio[0] : 0) : j < L ? Math.fround(audio[j] - preemph * audio[j - 1]) : 0);
+    const out = new Float32Array((f1 - f0) * nMels);
+    for (let f = f0; f < f1; f++) {
+      const s = f * hop - pad;
+      for (let i = 0; i < nFft; i++) { re[i] = x(s + i) * window[i]; im[i] = 0; }
+      fft(re, im);
+      for (let k = 0; k < nBins; k++) pow[k] = re[k] * re[k] + im[k] * im[k];
+      const o = (f - f0) * nMels;
+      for (let m = 0; m < nMels; m++) {
+        let acc = 0; const row = m * nBins;
+        for (let k = lo[m]; k < hi[m]; k++) acc += melFilters[row + k] * pow[k];
+        out[o + m] = Math.log(acc + guard);
+      }
     }
-  }
-  return { data: out, numFrames };
+    return out;
+  };
+}
+
+// Whole-file features (kept for the parity test). Returns { data: [numFrames * nMels], numFrames }.
+export function logMel(audio, melFilters) {
+  const numFrames = Math.floor(audio.length / CFG.hop);
+  return { data: makeMelExtractor(melFilters)(audio, 0, numFrames), numFrames };
 }
 
 // ---------- speaker cache (batch size 1) ----------
@@ -183,33 +192,32 @@ export class Diarizer {
     Object.assign(this, { ort, embedSession, stepSession, melFilters, silence });
   }
 
-  async embed(feats, numFrames) {
+  // Embeddings [e0, e1) (one per 8 mel frames). Each depends only on its own 8 frames,
+  // so computing them chunk by chunk gives exactly the whole-file result.
+  async embedRange(audio, e0, e1, numFrames) {
     const { ort } = this, c = CFG;
-    const out = [];
-    const block = c.sub * 2048;
-    for (let start = 0; start < numFrames; start += block) {
-      const n = Math.min(block, numFrames - start);
-      const t = new ort.Tensor('float32', feats.subarray(start * c.nMels, (start + n) * c.nMels), [1, n, c.nMels]);
-      const r = await this.embedSession.run({ features: t });
-      const e = r.embeds.data, T = r.embeds.dims[1];
-      for (let i = 0; i < T; i++) out.push(e.slice(i * c.hidden, (i + 1) * c.hidden));
-    }
+    const f0 = e0 * c.sub, f1 = Math.min(e1 * c.sub, numFrames);
+    const feats = this.mel(audio, f0, f1);
+    const r = await this.embedSession.run({ features: new ort.Tensor('float32', feats, [1, f1 - f0, c.nMels]) });
+    const e = r.embeds.data, out = [];
+    for (let i = 0; i < r.embeds.dims[1]; i++) out.push(e.slice(i * c.hidden, (i + 1) * c.hidden));
     return out;
   }
 
   // Returns Float32Array [numFrames * 8] of speaker probabilities (sigmoid), one row per 10 ms.
+  // Memory beyond the audio itself stays bounded: features and embeddings are made per chunk.
   async run(audio, onProgress = () => {}) {
     const { ort } = this, c = CFG;
-    const { data: feats, numFrames } = logMel(audio, this.melFilters);
-    const embeds = await this.embed(feats, numFrames);
-    const nEmb = embeds.length;
+    this.mel ??= makeMelExtractor(this.melFilters);
+    const numFrames = Math.floor(audio.length / c.hop);
+    const nEmb = Math.ceil(numFrames / c.sub);
     const cache = new SpeakerCache(this.silence);
-    const probsOut = new Float32Array(Math.ceil(numFrames / c.sub) * c.sub * c.nSpk);
+    const probsOut = new Float32Array(nEmb * c.sub * c.nSpk);
     let written = 0;
     for (let start = 0; start < nEmb; start += c.chunkLen) {
       const end = Math.min(start + c.chunkLen, nEmb);
       const nChunk = end - start;
-      const chunk = embeds.slice(start, Math.min(end + c.rightCtx, nEmb));
+      const chunk = await this.embedRange(audio, start, Math.min(end + c.rightCtx, nEmb), numFrames);
       const cached = cache.getEmbeds();
       const input = cached.concat(chunk);
       const T = input.length;

@@ -36,6 +36,7 @@ let diarWorker = newDiarWorker();
 function newDiarWorker() {
   const w = new Worker('./worker.js', { type: 'module' });
   w.onmessage = onDiarMessage;
+  w.onerror = e => { if (job?.doDiar && !diar) onDiarMessage({ data: { type: 'error', text: e.message || 'the speaker worker stopped' } }); };
   return w;
 }
 // Whisper's worker is also replaced after every run, so its ~800 MB (CPU) isn't held while idle
@@ -44,6 +45,8 @@ let asrWorker = newAsrWorker();
 function newAsrWorker() {
   const w = new Worker('./whisper-worker.js', { type: 'module' });
   w.onmessage = onAsrMessage;
+  // a worker the browser kills (e.g. for memory) fires no reply; surface it instead of waiting forever
+  w.onerror = e => { const r = asrReply; asrReply = null; r?.reject(new Error(e.message || 'the speech worker stopped')); };
   return w;
 }
 
@@ -109,7 +112,8 @@ async function loadAudio(blob, name) {
   }
   $('player').src = file.url;
   $('drop').classList.add('loaded');
-  $('file-info').innerHTML = `<b>${esc(name)}</b> · ${X.hms(file.duration)} long`;
+  $('file-info').innerHTML = `<b>${esc(name)}</b> · ${X.hms(file.duration)} long` +
+    (file.duration > 90 * 60 ? '<br>Long recording: if the page reloads partway through, tick “One step at a time” under Advanced settings, or split the file into one-hour parts.' : '');
   diar = words = null; turns = []; dirty = false;
   $('results').hidden = true;
   setExports('idle');
@@ -158,7 +162,7 @@ $('go').onclick = () => {
   const doAsr = $('opt-asr').checked, doDiar = $('opt-diar').checked;
   const q = QUALITY[document.querySelector('input[name=quality]:checked').value];
   const dev = asrDevice();
-  job = { doAsr, doDiar, q, dev, pending: 0, t0: performance.now() };
+  job = { doAsr, doDiar, q, dev, lang: $('lang').value, pending: 0, t0: performance.now() };
   diar = words = null; turns = []; segs = []; dirty = false;
   $('transcript').innerHTML = ''; $('results').hidden = true;
   $('progress').hidden = false; $('done-note').textContent = ''; $('counter').innerHTML = '';
@@ -181,11 +185,54 @@ $('go').onclick = () => {
   }
 };
 
-function startAsr() {
+// Whisper runs one 30-second window at a time (5 s of context on each side); only the
+// window is copied to the worker, and only its words come back.
+const WIN = 30, STRIDE = 5;
+// Known limit: transformers.js 4.3.0 keeps some memory per window (Whisper's worker measured ~0.6 GB
+// after 5 minutes and ~1.2 GB after 65 in Chrome). Replacing the worker mid-run made the peak worse.
+
+let asrReply = null;
+function asrCall(msg, transfer = []) {
+  return new Promise((resolve, reject) => { asrReply = { resolve, reject }; asrWorker.postMessage(msg, transfer); });
+}
+
+async function startAsr() {
   job.asrWaiting = false;
-  const b = audio16.slice();
-  asrWorker.postMessage({ audio: b, model: job.q.id, device: job.dev, dtype: job.q[job.dev].dtype, language: $('lang').value }, [b.buffer]);
   st('asr', 'Starting…', 0);
+  try {
+    await asrCall({ type: 'load', model: job.q.id, device: job.dev, dtype: job.q[job.dev].dtype });
+    job.asrT0 = performance.now();
+    st('asr', 'Transcribing…', 0);
+    const total = audio16.length / 16000, got = [];
+    let lastEnd = 0;
+    for (let start = 0; start < total; start += WIN - 2 * STRIDE) {
+      const s = Math.max(0, start - STRIDE), e = Math.min(total, start + WIN - STRIDE);
+      const i0 = Math.floor(s * 16000), i1 = Math.floor(e * 16000);
+      if (i1 - i0 < 1600) break;
+      const clip = audio16.slice(i0, i1);
+      const { words: ws } = await asrCall({ type: 'window', audio: clip, offset: s, language: job.lang }, [clip.buffer]);
+      // keep the words whose midpoint falls in this window's own (non-context) span
+      const own1 = e >= total ? total : start + WIN - 2 * STRIDE;
+      for (const w of ws) {
+        const mid = (w.start + w.end) / 2;
+        if (mid >= start && mid < own1 && w.start >= lastEnd - 0.05) { got.push(w); lastEnd = w.end; }
+      }
+      words = got;
+      const progress = Math.min(1, own1 / total);
+      const el = (performance.now() - job.asrT0) / 1000, eta = progress > 0.02 ? el / progress - el : null;
+      st('asr', `Transcribing… ${Math.round(100 * progress)}%` + (eta ? `, about ${eta < 90 ? Math.round(eta) + ' s' : Math.round(eta / 60) + ' min'} left` : ''), progress);
+      setCounter(progress * file.duration);
+      showResults();
+      if (e >= total) break;
+    }
+    words = got;
+    recycleAsrWorker();
+    st('asr', `Done: ${words.length.toLocaleString()} words.`, 1); setCounter(file.duration);
+    showResults(); finishOne();
+  } catch (err) {
+    st('asr', 'Something went wrong: ' + (err?.message || err));
+    recycleAsrWorker(); finishOne();
+  }
 }
 
 function recycleAsrWorker() {
@@ -253,25 +300,12 @@ function onDiarMessage({ data }) {
 
 function onAsrMessage({ data }) {
   if (data.type === 'status') {
-    if (data.text.startsWith('Transcribing')) job.asrT0 = performance.now();
     st('asr', data.text.replace('Downloading Whisper', 'Downloading the speech model (first time only)'), data.progress);
+    return;
   }
-  else if (data.type === 'error') { st('asr', 'Something went wrong: ' + data.text); recycleAsrWorker(); finishOne(); }
-  else if (data.type === 'partial') {
-    words = data.words;
-    // estimate from transcription time only (not the model download)
-    const el = (performance.now() - (job.asrT0 ?? job.t0)) / 1000;
-    const eta = data.progress > 0.02 ? el / data.progress - el : null;
-    st('asr', `Transcribing… ${Math.round(100 * data.progress)}%` + (eta ? `, about ${eta < 90 ? Math.round(eta) + ' s' : Math.round(eta / 60) + ' min'} left` : ''), data.progress);
-    setCounter(data.progress * file.duration);
-    showResults();
-  } else if (data.type === 'result') {
-    words = data.words;
-    recycleAsrWorker();
-    st('asr', `Done: ${words.length.toLocaleString()} words.`, 1); setCounter(file.duration);
-    showResults(); finishOne();
-  }
-};
+  const reply = asrReply; asrReply = null;
+  if (data.type === 'error') reply?.reject(new Error(data.text)); else reply?.resolve(data);
+}
 
 // ---------- transcript model ----------
 const endsSentence = w => /[.?!]["')\]]?$/.test(w.text.trim());
@@ -354,25 +388,40 @@ $('speakers').oninput = e => {
   dirty = true;
 };
 
+// Only turns that changed since the last render are rebuilt: during a long run new words
+// arrive every window, and redrawing thousands of turns each time would stall the page.
+let renderedSigs = [], renderedKey = '';
+function turnHTML(t, i, ids, final) {
+  const who = diar && t.speaker != null
+    ? `<select class="who" data-i="${i}" style="color:${COLORS[t.speaker]}" ${final ? '' : 'disabled'}>` +
+      ids.map(s => `<option value="${s}" ${s === t.speaker ? 'selected' : ''}>${esc(names[s])}</option>`).join('') + `</select>`
+    : '';
+  const body = t.text
+    ? `<div class="txt" data-i="${i}" ${final ? 'contenteditable="plaintext-only" spellcheck="true"' : ''}>${esc(t.text)}</div>`
+    : `<div class="txt faded">${job?.doAsr ? '…' : `until ${X.hms(t.end)}`}</div>`;
+  return `<div class="turn" data-i="${i}"><button class="ts" data-t="${t.start}" title="Play from here">${X.hms(t.start)}</button><div>${who}${body}</div></div>`;
+}
+
 function renderTranscript() {
   const final = !job || job.finished;
-  $('transcript').classList.toggle('typing', !final && !!job?.doAsr);
+  const box = $('transcript');
+  box.classList.toggle('typing', !final && !!job?.doAsr);
   const ids = speakerIds().map(x => x.id);
   if (!turns.length) {
-    $('transcript').innerHTML = `<p class="empty">${job ? 'The transcript will be typed out here as it goes…' : ''}</p>`;
+    box.innerHTML = `<p class="empty">${job ? 'The transcript will be typed out here as it goes…' : ''}</p>`;
+    renderedSigs = []; renderedKey = '';
     return;
   }
-  $('transcript').innerHTML = turns.map((t, i) => {
-    const who = diar && t.speaker != null
-      ? `<select class="who" data-i="${i}" style="color:${COLORS[t.speaker]}" ${final ? '' : 'disabled'}>` +
-        ids.map(s => `<option value="${s}" ${s === t.speaker ? 'selected' : ''}>${esc(names[s])}</option>`).join('') + `</select>`
-      : '';
-    const body = t.text
-      ? `<div class="txt" data-i="${i}" ${final ? 'contenteditable="plaintext-only" spellcheck="true"' : ''}>${esc(t.text)}</div>`
-      : `<div class="txt faded">${job?.doAsr ? '…' : `until ${X.hms(t.end)}`}</div>`;
-    return `<div class="turn" data-i="${i}"><button class="ts" data-t="${t.start}" title="Play from here">${X.hms(t.start)}</button><div>${who}${body}</div></div>`;
-  }).join('');
-  if (!final) $('transcript').lastElementChild?.scrollIntoView({ block: 'nearest' });
+  const key = `${final}|${ids.join(',')}|${names.join('|')}`;
+  const sigs = turns.map(t => `${t.speaker}|${t.start}|${t.text}`);
+  let keep = 0;
+  if (key === renderedKey && box.children.length === renderedSigs.length)
+    while (keep < sigs.length && keep < renderedSigs.length && sigs[keep] === renderedSigs[keep]) keep++;
+  else box.innerHTML = '';
+  while (box.children.length > keep) box.lastElementChild.remove();
+  box.insertAdjacentHTML('beforeend', turns.slice(keep).map((t, k) => turnHTML(t, keep + k, ids, final)).join(''));
+  renderedSigs = sigs; renderedKey = key;
+  if (!final) box.lastElementChild?.scrollIntoView({ block: 'nearest' });
 }
 
 $('transcript').addEventListener('change', e => {
