@@ -1,7 +1,8 @@
 // Speaker diarization worker: Nemotron 3 Diarization (ONNX) on onnxruntime-web.
+// CPU-only build: its WebAssembly is about half the size of the all-backends one (14 vs 28 MB).
 const ORT_VERSION = '1.30.0';
 const ORT_CDN = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
-const ort = await import(ORT_CDN + 'ort.all.min.mjs');
+const ort = await import(ORT_CDN + 'ort.wasm.min.mjs');
 import { Diarizer } from './diar.js';
 
 ort.env.wasm.wasmPaths = ORT_CDN;
@@ -46,7 +47,7 @@ async function load(base, model, backend) {
     fetchBytes(base + 'silence_embeds.bin', 'silence embedding'),
   ]);
   postMessage({ type: 'status', text: 'Starting the speaker model…', progress: null });
-  const opts = { executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'], graphOptimizationLevel: 'all' };
+  const opts = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
   const embed = await ort.InferenceSession.create(embedBuf, { executionProviders: ['wasm'] });
   const step = await ort.InferenceSession.create(stepBuf, opts);
   diarizer = new Diarizer(ort, embed, step, new Float32Array(melBuf.buffer), new Float32Array(silBuf.buffer));
@@ -54,13 +55,21 @@ async function load(base, model, backend) {
   postMessage({ type: 'loaded', ms: performance.now() - t0 });
 }
 
+let lastRead = 0;
+const pendingReads = new Map();
+
 onmessage = async ({ data }) => {
+  if (data.type === 'audio') { pendingReads.get(data.id)?.(data.audio); pendingReads.delete(data.id); return; }
   try {
     if (data.type === 'run') {
       await load(data.base, data.model, data.backend);
       postMessage({ type: 'status', text: 'Diarizing…', progress: 0 });
       const t0 = performance.now();
-      const { probs, numFrames } = await diarizer.run(data.audio, p =>
+      // the page keeps the recording; ask it for each chunk's samples as they are needed
+      const source = { length: data.length, read: (s0, s1) => new Promise(resolve => {
+        const id = ++lastRead; pendingReads.set(id, resolve); postMessage({ type: 'audio', id, s0, s1 });
+      }) };
+      const { probs, numFrames } = await diarizer.run(source, p =>
         postMessage({ type: 'status', text: 'Diarizing…', progress: p }));
       postMessage({ type: 'result', probs, numFrames, ms: performance.now() - t0 }, [probs.buffer]);
     }

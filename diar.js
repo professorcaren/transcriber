@@ -43,7 +43,8 @@ function makeFFT(n) {
 
 // Log-mel features for STFT frames [f0, f1), computed straight from the audio: pre-emphasis and
 // the centered STFT's zero padding are applied on the fly, so long files need no whole-file arrays.
-// makeMelExtractor(melFilters) -> (audio, f0, f1) => Float32Array [(f1 - f0) * nMels]
+// makeMelExtractor(melFilters) -> (audio, f0, f1, base, L) => Float32Array [(f1 - f0) * nMels]
+// `audio` may be just the samples from `base` on (see melSpan) of a recording L samples long.
 export function makeMelExtractor(melFilters) {
   const { nFft, win, hop, nMels, preemph } = CFG;
   const nBins = nFft / 2 + 1, pad = nFft / 2;
@@ -59,10 +60,10 @@ export function makeMelExtractor(melFilters) {
     lo[m] = nBins; hi[m] = 0;
     for (let k = 0; k < nBins; k++) if (melFilters[m * nBins + k] !== 0) { lo[m] = Math.min(lo[m], k); hi[m] = k + 1; }
   }
-  return (audio, f0, f1) => {
-    const L = audio.length;
+  return (audio, f0, f1, base = 0, L = audio.length) => {
     // pre-emphasized sample j (rounded to float32, as the reference stores it), 0 outside the audio
-    const x = j => (j <= 0 ? (j === 0 ? audio[0] : 0) : j < L ? Math.fround(audio[j] - preemph * audio[j - 1]) : 0);
+    const a = j => audio[j - base];
+    const x = j => (j <= 0 ? (j === 0 ? a(0) : 0) : j < L ? Math.fround(a(j) - preemph * a(j - 1)) : 0);
     const out = new Float32Array((f1 - f0) * nMels);
     for (let f = f0; f < f1; f++) {
       const s = f * hop - pad;
@@ -78,6 +79,12 @@ export function makeMelExtractor(melFilters) {
     }
     return out;
   };
+}
+
+// Samples [s0, s1) that STFT frames [f0, f1) read, in a recording L samples long.
+export function melSpan(f0, f1, L) {
+  const { nFft, hop } = CFG;
+  return [Math.max(0, f0 * hop - nFft / 2 - 1), Math.min(L, (f1 - 1) * hop + nFft / 2)];
 }
 
 // Whole-file features (kept for the parity test). Returns { data: [numFrames * nMels], numFrames }.
@@ -194,10 +201,11 @@ export class Diarizer {
 
   // Embeddings [e0, e1) (one per 8 mel frames). Each depends only on its own 8 frames,
   // so computing them chunk by chunk gives exactly the whole-file result.
-  async embedRange(audio, e0, e1, numFrames) {
+  async embedRange(source, e0, e1, numFrames) {
     const { ort } = this, c = CFG;
     const f0 = e0 * c.sub, f1 = Math.min(e1 * c.sub, numFrames);
-    const feats = this.mel(audio, f0, f1);
+    const [s0, s1] = melSpan(f0, f1, source.length);
+    const feats = this.mel(await source.read(s0, s1), f0, f1, s0, source.length);
     const r = await this.embedSession.run({ features: new ort.Tensor('float32', feats, [1, f1 - f0, c.nMels]) });
     const e = r.embeds.data, out = [];
     for (let i = 0; i < r.embeds.dims[1]; i++) out.push(e.slice(i * c.hidden, (i + 1) * c.hidden));
@@ -205,11 +213,13 @@ export class Diarizer {
   }
 
   // Returns Float32Array [numFrames * 8] of speaker probabilities (sigmoid), one row per 10 ms.
-  // Memory beyond the audio itself stays bounded: features and embeddings are made per chunk.
+  // `audio` is a Float32Array or a source {length, read(s0, s1) -> Promise<Float32Array>}, so the
+  // recording can stay elsewhere: features and embeddings are made per chunk, from just its samples.
   async run(audio, onProgress = () => {}) {
     const { ort } = this, c = CFG;
     this.mel ??= makeMelExtractor(this.melFilters);
-    const numFrames = Math.floor(audio.length / c.hop);
+    const source = ArrayBuffer.isView(audio) ? { length: audio.length, read: async (s0, s1) => audio.subarray(s0, s1) } : audio;
+    const numFrames = Math.floor(source.length / c.hop);
     const nEmb = Math.ceil(numFrames / c.sub);
     const cache = new SpeakerCache(this.silence);
     const probsOut = new Float32Array(nEmb * c.sub * c.nSpk);
@@ -217,7 +227,7 @@ export class Diarizer {
     for (let start = 0; start < nEmb; start += c.chunkLen) {
       const end = Math.min(start + c.chunkLen, nEmb);
       const nChunk = end - start;
-      const chunk = await this.embedRange(audio, start, Math.min(end + c.rightCtx, nEmb), numFrames);
+      const chunk = await this.embedRange(source, start, Math.min(end + c.rightCtx, nEmb), numFrames);
       const cached = cache.getEmbeds();
       const input = cached.concat(chunk);
       const T = input.length;

@@ -103,11 +103,12 @@ async function loadAudio(blob, name) {
     const ctx = new AudioContext({ sampleRate: 16000 });
     let decoded;
     try { decoded = await ctx.decodeAudioData(await blob.arrayBuffer()); } finally { ctx.close(); }
+    // mix down into channel 0 in place rather than into a new array (saves ~230 MB per stereo hour)
     audio16 = decoded.getChannelData(0);
-    if (decoded.numberOfChannels > 1) {
-      const mono = new Float32Array(decoded.length), n = decoded.numberOfChannels;
-      for (let c = 0; c < n; c++) { const ch = decoded.getChannelData(c); for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / n; }
-      audio16 = mono;
+    const n = decoded.numberOfChannels;
+    if (n > 1) {
+      for (let c = 1; c < n; c++) { const ch = decoded.getChannelData(c); for (let i = 0; i < ch.length; i++) audio16[i] += ch[i]; }
+      for (let i = 0; i < audio16.length; i++) audio16[i] /= n;
     }
     if (file?.url) URL.revokeObjectURL(file.url);
     file = { name, duration: decoded.duration, url: URL.createObjectURL(blob) };
@@ -182,8 +183,9 @@ $('go').onclick = () => {
   updateOptions();
   if (doDiar) {
     job.pending++;
-    const a = audio16.slice();
-    diarWorker.postMessage({ type: 'run', audio: a, base: DIAR_BASE, model: 'step_int8', backend: 'wasm' }, [a.buffer]);
+    // the worker asks for the recording a chunk at a time (see onDiarMessage) rather than holding a copy
+    job.audio = audio16;
+    diarWorker.postMessage({ type: 'run', length: audio16.length, base: DIAR_BASE, model: 'step_int8', backend: 'wasm' });
     st('diar', 'Starting…', 0);
   }
   if (doAsr) {
@@ -296,7 +298,10 @@ function finishOne() {
 }
 
 function onDiarMessage({ data }) {
-  if (data.type === 'status') st('diar', data.text.replace('Diarizing…', 'Finding speakers…'), data.progress);
+  if (data.type === 'audio') {
+    const a = job.audio.slice(data.s0, data.s1);
+    diarWorker.postMessage({ type: 'audio', id: data.id, audio: a }, [a.buffer]);
+  } else if (data.type === 'status') st('diar', data.text.replace('Diarizing…', 'Finding speakers…'), data.progress);
   else if (data.type === 'loaded') st('diar', 'Finding speakers…', 0);
   else if (data.type === 'error') { st('diar', 'Something went wrong: ' + data.text); recycleDiarWorker(); finishOne(); }
   else if (data.type === 'result') {
@@ -431,7 +436,6 @@ function renderTranscript() {
   while (box.children.length > keep) box.lastElementChild.remove();
   box.insertAdjacentHTML('beforeend', turns.slice(keep).map((t, k) => turnHTML(t, keep + k, ids, final)).join(''));
   renderedSigs = sigs; renderedKey = key;
-  if (!final) box.lastElementChild?.scrollIntoView({ block: 'nearest' });
 }
 
 $('transcript').addEventListener('change', e => {
