@@ -122,7 +122,7 @@
   .bar { height: 4px; background: var(--rule); margin-top: 6px; }
   .bar > div { height: 100%; width: 0; background: var(--ink); transition: width .2s; }
 
-  /* ---- step 4 ---- */
+  /* ---- downloads ---- */
   #export-note { font-size: 14.5px; margin: 0 0 14px; display: flex; gap: 10px; align-items: center; }
   #export-note .spin { width: 16px; height: 16px; border: 2px solid var(--rule); border-top-color: var(--ink); border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
   #export-note:not(.busy) .spin { display: none; }
@@ -130,6 +130,16 @@
   .formats h3 { font: 13px var(--stamp); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 8px; color: var(--faded); }
   .formats button { display: block; width: 100%; text-align: left; margin-bottom: 10px; }
   .formats button small { display: block; font-weight: 400; color: var(--faded); font-size: 12.5px; line-height: 1.4; }
+
+  /* wide screens: once the downloads appear they sit in a sticky rail beside the page */
+  @media (min-width: 1220px) {
+    main:has(#exports:not([hidden])) { max-width: 1180px; display: grid; grid-template-columns: minmax(0, 1fr) 272px; column-gap: 22px; align-items: start; }
+    main > * { grid-column: 1; }
+    main > #exports { grid-column: 2; grid-row: 1 / span 20; position: sticky; top: 18px; padding: 18px 18px 12px; }
+    #exports .formats { grid-template-columns: 1fr; gap: 6px; }
+    #exports .formats button { font-size: 14px; padding: 5px 10px; margin-bottom: 7px; }
+    #exports .formats button small { display: none; }
+  }
 
   /* ---- speakers ---- */
   #timeline { width: 100%; display: block; cursor: pointer; margin-bottom: 6px; }
@@ -277,22 +287,6 @@
     </div>
   </section>
 
-  <section class="sheet" id="exports" hidden>
-    <h2><span class="no">4</span>Download</h2>
-    <p id="export-note" class="faded"><span class="spin"></span><span id="export-text">Your transcript will be ready to download here once it's finished.</span></p>
-    <div class="formats">
-      <div><h3>To read and code</h3>
-        <button data-f="docx" disabled>Word document (.docx)<small>For reading and sharing, and for NVivo, ATLAS.ti or MAXQDA</small></button>
-        <button data-f="txt" disabled>Plain text (.txt)<small>Timestamped, one speaker turn per paragraph</small></button></div>
-      <div><h3>To play with the audio</h3>
-        <button data-f="srt" disabled>Subtitles (.srt)<small>Works with most video players and editors</small></button>
-        <button data-f="vtt" disabled>Web captions (.vtt)<small>With speaker tags, for web players and some QDA tools</small></button></div>
-      <div><h3>For analysis</h3>
-        <button data-f="csv" disabled>Spreadsheet (.csv)<small>One row per turn: start, end, speaker, text</small></button>
-        <button data-f="json" disabled>Data file (.json)<small>Turns plus every word with its timing and speaker</small></button>
-        <button data-f="rttm" disabled>Speaker timeline (.rttm)<small>Standard diarization format, for evaluation tools</small></button></div>
-    </div>
-  </section>
 
   <div id="results" hidden>
     <section class="sheet" id="speakers-box">
@@ -309,6 +303,23 @@
       <div id="transcript"></div>
     </section>
   </div>
+
+  <section class="sheet" id="exports" hidden>
+    <h2>Download</h2>
+    <p id="export-note" class="faded"><span class="spin"></span><span id="export-text">Your transcript will be ready to download here once it's finished.</span></p>
+    <div class="formats">
+      <div><h3>To read and code</h3>
+        <button data-f="docx" disabled>Word document (.docx)<small>For reading and sharing, and for NVivo, ATLAS.ti or MAXQDA</small></button>
+        <button data-f="txt" disabled>Plain text (.txt)<small>Timestamped, one speaker turn per paragraph</small></button></div>
+      <div><h3>To play with the audio</h3>
+        <button data-f="srt" disabled>Subtitles (.srt)<small>Works with most video players and editors</small></button>
+        <button data-f="vtt" disabled>Web captions (.vtt)<small>With speaker tags, for web players and some QDA tools</small></button></div>
+      <div><h3>For analysis</h3>
+        <button data-f="csv" disabled>Spreadsheet (.csv)<small>One row per turn: start, end, speaker, text</small></button>
+        <button data-f="json" disabled>Data file (.json)<small>Turns plus every word with its timing and speaker</small></button>
+        <button data-f="rttm" disabled>Speaker timeline (.rttm)<small>Standard diarization format, for evaluation tools</small></button></div>
+    </div>
+  </section>
 
   <footer>
     <p>Speech recognition: <a href="https://github.com/openai/whisper">OpenAI Whisper</a> via <a href="https://github.com/huggingface/transformers.js">transformers.js</a>. Speaker identification: <a href="https://huggingface.co/nvidia/Nemotron-3-Diarization">NVIDIA Nemotron 3 Diarization</a> (OpenMDW license), converted to ONNX and run with <a href="https://onnxruntime.ai">ONNX Runtime Web</a>. Typeset in Courier Prime and Special Elite.</p>

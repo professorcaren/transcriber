@@ -498,10 +498,12 @@ function wordRanges(t) {
 }
 
 // underline the word being spoken (CSS Custom Highlight API; skipped where unsupported)
+// Whisper's word timings run a little late, so each word lights up slightly before its start
+const WORD_LEAD = 0.2;
 let wordNode = null, wordIdx = -1;
 function highlightWord() {
   if (!window.CSS?.highlights || !window.Highlight) return;
-  const t = turns[nowIdx], now = $('player').currentTime;
+  const t = turns[nowIdx], now = $('player').currentTime + WORD_LEAD;
   const ranges = t && !t.edited ? wordRanges(t) : null;
   const node = ranges && document.querySelector(`.txt[data-i="${nowIdx}"]`)?.firstChild;
   let i = -1;
@@ -574,6 +576,8 @@ const FORMATS = {
   json: [d => new Blob([X.toJson(d)], { type: 'application/json' }), 'json'],
   rttm: [d => new Blob([X.toRttm(d)], { type: 'text/plain' }), 'rttm'],
 };
+// the side rail hides each format's description, so keep it as a tooltip
+document.querySelectorAll('#exports button[data-f]').forEach(b => b.title = b.querySelector('small').textContent);
 $('exports').addEventListener('click', e => {
   const b = e.target.closest('button[data-f]'); if (!b) return;
   const d = docModel();
