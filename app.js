@@ -122,6 +122,9 @@ async function loadAudio(blob, name) {
   diar = words = null; turns = []; dirty = false;
   $('results').hidden = true;
   $('long-tips').hidden = file.duration <= 30 * 60;
+  // steps appear as they become useful: options and Start once there is a recording,
+  // downloads once a run has started
+  $('step-options').hidden = false; $('step-run').hidden = false; $('exports').hidden = true;
   setExports('idle');
   $('progress').hidden = true;
   updateOptions();
@@ -174,6 +177,7 @@ $('go').onclick = () => {
   $('progress').hidden = false; $('done-note').textContent = ''; $('counter').innerHTML = '';
   document.body.classList.add('running');
   setExports('busy');
+  $('exports').hidden = false;
   $('row-diar').hidden = !doDiar; $('row-asr').hidden = !doAsr;
   updateOptions();
   if (doDiar) {

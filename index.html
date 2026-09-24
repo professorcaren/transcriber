@@ -59,6 +59,9 @@
 
   /* ---- sheets ---- */
   .sheet { background: var(--paper); border-radius: 3px; box-shadow: var(--shadow); padding: 22px 26px; margin-bottom: 18px; position: relative; }
+  /* sections appear one step at a time; a gentle fade when they do */
+  .sheet { animation: appear .35s ease-out; }
+  @keyframes appear { from { opacity: 0; transform: translateY(6px); } }
   .sheet h2 { font: 19px var(--stamp); margin: 0 0 14px; display: flex; gap: 12px; align-items: center; letter-spacing: .02em; }
   .no { font: 13px var(--stamp); color: var(--red); border: 1.5px solid var(--red); border-radius: 50%; width: 30px; height: 30px; display: inline-grid; place-items: center; transform: rotate(-6deg); flex: none; }
 
@@ -210,7 +213,7 @@
     </div>
   </section>
 
-  <section class="sheet">
+  <section class="sheet" id="step-options" hidden>
     <h2><span class="no">2</span>Choose what you need</h2>
     <label class="option"><input type="checkbox" id="opt-asr" checked>
       <div><b>Type up the words</b><span class="small faded">Speech recognition with OpenAI's Whisper.</span>
@@ -241,7 +244,7 @@
     </details>
   </section>
 
-  <section class="sheet">
+  <section class="sheet" id="step-run" hidden>
     <h2><span class="no">3</span>Transcribe</h2>
     <div class="run">
       <button class="go" id="go" disabled>Start transcribing</button>
@@ -264,7 +267,7 @@
     </div>
   </section>
 
-  <section class="sheet" id="exports">
+  <section class="sheet" id="exports" hidden>
     <h2><span class="no">4</span>Download</h2>
     <p id="export-note" class="faded"><span class="spin"></span><span id="export-text">Your transcript will be ready to download here once it's finished.</span></p>
     <div class="formats">
