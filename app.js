@@ -65,6 +65,11 @@ const isSafari = /Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Edg\/
   setExports('idle');
 })();
 
+if (isSafari) {
+  $('browser-note').hidden = false;
+  $('browser-note').textContent = "You're using Safari, which reloads pages that use a lot of memory. Short recordings are fine; for anything over about 30 minutes, Chrome or Edge is more reliable.";
+}
+
 function asrDevice() {
   const d = $('device').value;
   return d === 'auto' ? (gpu ? 'webgpu' : 'wasm') : d;

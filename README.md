@@ -2,7 +2,7 @@
 
 Transcribe research interviews and label who is speaking, **entirely in your browser**. There's no server, no upload and no sign-in, and the audio never leaves your computer.
 
-**Use it:** https://nealcaren.github.io/local-interview-transcriber/
+**Use it:** https://nealcaren.github.io/local-interview-transcriber/ (works best in Chrome or Edge on a laptop or desktop)
 
 Built for graduate students and researchers working with sensitive recordings (oral histories, qualitative interviews, focus groups). Instead of a Python setup or a cloud service, you open a web page.
 
@@ -65,7 +65,7 @@ npm i onnxruntime-node && node tools/parity_test.mjs step step_int8
 
 - Automatic transcripts contain errors, especially names, numbers and overlapping speech. Check them against the audio before quoting.
 - Similar voices can be merged into one speaker, and the model handles at most 8 speakers. Synthetic text-to-speech voices are especially hard for it to tell apart.
-- Long recordings use a lot of memory. The speaker step works in small pieces, but Whisper's memory grows as it goes (in Chrome, about 0.6 GB for 5 minutes and 1.2 GB for 65 minutes, a limitation of transformers.js 4.3.0), on top of the decoded audio (about 0.25 GB per hour). For multi-hour files, or if Safari reloads the page, tick "One step at a time" under Advanced settings or split the recording into one-hour parts.
+- Long recordings use a lot of memory. The speaker step works in small pieces, but Whisper's memory grows as it goes (in Chrome, about 0.6 GB for 5 minutes and 1.2 GB for 65 minutes, a limitation of transformers.js 4.3.0), on top of the decoded audio (about 0.25 GB per hour). For multi-hour files, or if Safari reloads the page, tick "One step at a time" under Advanced settings or split the recording into one-hour parts. Chrome and Edge tolerate more memory than Safari; the page recommends them to Safari users.
 
 ## Privacy
 

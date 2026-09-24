@@ -100,6 +100,10 @@
   details { margin-top: 12px; font-size: 14.5px; }
   details summary { cursor: pointer; color: var(--faded); }
   details .inner { padding: 10px 0 0 18px; display: grid; gap: 8px; }
+  .tips { margin: 8px 0 0; padding-left: 20px; color: var(--faded); }
+  .tips li { margin-bottom: 6px; }
+  .tips b { color: var(--ink); }
+  #browser-note { margin: 14px 0 0; padding: 8px 12px; border-left: 3px solid var(--red); background: var(--red-soft); }
 
   /* ---- step 3 ---- */
   .run { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
@@ -243,6 +247,16 @@
       <button class="go" id="go" disabled>Start transcribing</button>
       <span class="small faded">Keep this tab open while it works. An hour of audio takes several minutes to more than an hour, depending on your computer.</span>
     </div>
+    <p id="browser-note" class="small" hidden></p>
+    <details class="small">
+      <summary>Tips for long recordings</summary>
+      <ul class="tips">
+        <li><b>Use Chrome or Edge</b> on a laptop or desktop. That's where this page is tested most, and they tolerate more memory use than Safari.</li>
+        <li><b>Up to about an hour</b> works well on most computers. For longer interviews, split the recording into one-hour parts (QuickTime Player's Edit → Split, or Audacity), transcribe each part, and join the downloads.</li>
+        <li><b>If the page reloads or stops partway,</b> tick “One step at a time” under Advanced settings and try again. It's slower but uses much less memory.</li>
+        <li><b>Keep the computer awake and plugged in,</b> and leave this tab open until the downloads unlock. Closing or reloading the tab loses the transcript, so download it as soon as it's finished.</li>
+      </ul>
+    </details>
     <div id="progress" hidden>
       <div class="prow" id="row-asr"><div class="label"><span><b>Words</b> · <span id="st-asr"></span></span><span class="counter" id="counter" title="Position reached in the recording"></span></div><div class="bar"><div id="pr-asr"></div></div></div>
       <div class="prow" id="row-diar"><div class="label"><span><b>Speakers</b> · <span id="st-diar"></span></span></div><div class="bar"><div id="pr-diar"></div></div></div>
@@ -286,7 +300,7 @@
   <footer>
     <p>Speech recognition: <a href="https://github.com/openai/whisper">OpenAI Whisper</a> via <a href="https://github.com/huggingface/transformers.js">transformers.js</a>. Speaker identification: <a href="https://huggingface.co/nvidia/Nemotron-3-Diarization">NVIDIA Nemotron 3 Diarization</a> (OpenMDW license), converted to ONNX and run with <a href="https://onnxruntime.ai">ONNX Runtime Web</a>. Typeset in Courier Prime and Special Elite.</p>
     <p>Sample recording: interview with Arthur J. Beaumont by Derek Williams, November 17, 1974 (E-0055), <a href="https://dc.lib.unc.edu/cdm/compoundobject/collection/sohp/id/4477">Southern Oral History Program Collection</a>, Wilson Library, UNC-Chapel Hill.</p>
-    <p>Works best in a recent Chrome, Edge or Safari on a laptop or desktop. <a href="https://github.com/nealcaren/local-interview-transcriber">Source on GitHub</a>.</p>
+    <p>Works best in a recent Chrome or Edge on a laptop or desktop. <a href="https://github.com/nealcaren/local-interview-transcriber">Source on GitHub</a>.</p>
   </footer>
 </main>
 <script type="module" src="app.js"></script>
