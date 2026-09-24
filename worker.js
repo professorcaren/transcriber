@@ -6,8 +6,13 @@ const ort = await import(ORT_CDN + 'ort.wasm.min.mjs');
 import { Diarizer } from './diar.js';
 
 ort.env.wasm.wasmPaths = ORT_CDN;
-// a quarter of the cores: speakers still finish well ahead of Whisper, and the computer stays usable
-ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.floor((navigator.hardwareConcurrency || 4) / 4)) : 1;
+// A quarter of the cores by default: speakers still finish well ahead of Whisper, and the computer
+// stays usable. `allCores` (Advanced settings) uses up to 8. Set per run, before the first session:
+// the page gives each run a fresh worker.
+function setThreads(allCores) {
+  const n = navigator.hardwareConcurrency || 4;
+  ort.env.wasm.numThreads = !self.crossOriginIsolated ? 1 : allCores ? Math.min(8, n) : Math.max(1, Math.floor(n / 4));
+}
 
 const CACHE = 'nemotron-diar-v1';
 let diarizer = null, loadedKey = null;
@@ -63,6 +68,7 @@ onmessage = async ({ data }) => {
   if (data.type === 'audio') { pendingReads.get(data.id)?.(data.audio); pendingReads.delete(data.id); return; }
   try {
     if (data.type === 'run') {
+      if (!diarizer) setThreads(data.allCores);
       await load(data.base, data.model, data.backend);
       postMessage({ type: 'status', text: 'Diarizing…', progress: 0 });
       const t0 = performance.now();

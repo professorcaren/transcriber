@@ -185,7 +185,7 @@ $('go').onclick = () => {
     job.pending++;
     // the worker asks for the recording a chunk at a time (see onDiarMessage) rather than holding a copy
     job.audio = audio16;
-    diarWorker.postMessage({ type: 'run', length: audio16.length, base: DIAR_BASE, model: 'step_int8', backend: 'wasm' });
+    diarWorker.postMessage({ type: 'run', length: audio16.length, base: DIAR_BASE, model: 'step_int8', backend: 'wasm', allCores: $('all-cores').checked });
     st('diar', 'Starting…', 0);
   }
   if (doAsr) {

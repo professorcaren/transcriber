@@ -103,6 +103,10 @@
   details { margin-top: 12px; font-size: 14.5px; }
   details summary { cursor: pointer; color: var(--faded); }
   details .inner { padding: 10px 0 0 18px; display: grid; gap: 8px; }
+  /* advanced checkboxes: the step-2 options, smaller and without the rules */
+  .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 6px; cursor: pointer; }
+  .check > input { width: 16px; height: 16px; margin-top: 3px; accent-color: var(--ink); flex: none; }
+  .check b { display: block; }
   .tips { margin: 8px 0 0; padding-left: 20px; color: var(--faded); }
   .tips li { margin-bottom: 6px; }
   .tips b { color: var(--ink); }
@@ -195,7 +199,7 @@
   </header>
 
   <div class="stamp">
-    <b>Stays on this computer</b>
+    <b>Stays on your computer</b>
     <span>The speech models download once. After that, everything runs inside this browser tab and nothing is uploaded. Check that this fits your IRB protocol and consent forms.</span>
   </div>
 
@@ -239,7 +243,10 @@
         <div class="inline" style="margin:0"><label for="device">Run speech recognition on</label>
           <select id="device"><option value="auto">Automatic</option><option value="webgpu">Graphics card (WebGPU)</option><option value="wasm">Processor (CPU)</option></select></div>
         <div id="device-note" class="small faded"></div>
-        <label class="inline" style="margin:4px 0 0"><input type="checkbox" id="one-at-a-time"> One step at a time: find the speakers first, then transcribe. Slower, but uses much less memory. Try this if the page reloads or crashes.</label>
+        <label class="check"><input type="checkbox" id="one-at-a-time">
+          <div><b>One step at a time</b><span class="small faded">Find the speakers first, then transcribe. Slower, but uses much less memory. Try this if the page reloads or crashes.</span></div></label>
+        <label class="check"><input type="checkbox" id="all-cores">
+          <div><b>Find speakers faster</b><span class="small faded">Use up to 8 processor cores instead of a quarter of them. The computer may feel sluggish while it runs.</span></div></label>
       </div>
     </details>
   </section>
