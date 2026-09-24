@@ -6,7 +6,8 @@ const ort = await import(ORT_CDN + 'ort.wasm.min.mjs');
 import { Diarizer } from './diar.js';
 
 ort.env.wasm.wasmPaths = ORT_CDN;
-ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(8, navigator.hardwareConcurrency || 4) : 1;
+// a quarter of the cores: speakers still finish well ahead of Whisper, and the computer stays usable
+ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.max(1, Math.floor((navigator.hardwareConcurrency || 4) / 4)) : 1;
 
 const CACHE = 'nemotron-diar-v1';
 let diarizer = null, loadedKey = null;
